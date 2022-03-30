@@ -64,8 +64,14 @@ class git_file_server:
     # Intend to return file link of given filename
     def pull_file_link(self,filename):
         filename=filename.replace(" ","%20")
-        return f"https://github.com/{self.repo}/blob/main/{filename}?raw=true"
-
+        return f"https://github.com/{self.repo}/blob/{self.branch}/{filename}?raw=true"
+    
+    # Intend to return absolute filelink
+    def pull_absolute_file_lin(self,filename):
+        #https://raw.githubusercontent.com/gagaan-tech/v_nex_data/main/file_uploaded/Marshanicky.png
+        filename=filename.replace(" ","%20")
+        return f"https://raw.githubusercontent.com/{self.repo}/{self.branch}/{filename}"
+        
     # Intend to return all file link
     def pull_all_file_link(self):
         file_name_array = self.pull_all_filename()
