@@ -1,0 +1,8 @@
+README.md
+setup.py
+github_storage_system/src/github_storage_system.py
+github_storage_system/src/github_storage_system.egg-info/PKG-INFO
+github_storage_system/src/github_storage_system.egg-info/SOURCES.txt
+github_storage_system/src/github_storage_system.egg-info/dependency_links.txt
+github_storage_system/src/github_storage_system.egg-info/requires.txt
+github_storage_system/src/github_storage_system.egg-info/top_level.txt
