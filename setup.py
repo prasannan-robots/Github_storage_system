@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="github_storage_system",                     # This is the name of the package
-    version="0.0.3",                        # The initial release version
+    version="0.0.4",                        # The initial release version
     author="prasannan-robots",                     # Full name of the author
     description="To use github to store files",
     long_description=long_description,      # Long description read from the the readme file

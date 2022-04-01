@@ -7,7 +7,16 @@ class git_file_server:
     # Initialing with path_of_upload_folder as the path where the uploaded files will be
     # Needs a environmental variable with GITHUB_TOKEN as the github api token and 
     # GITHUB_REPO as the link to the github repository where the files will be stored
-    def __init__(self,path_of_upload_folder,token,repo,branch):
+    def __init__(self,path_of_upload_folder,token=None,repo=None,branch=None):
+        
+        # Intends to get authentication information through environmental variable
+        if token == None:
+            token = os.getenv("GITHUB_TOKEN")
+        if repo == None:
+            repo = os.getenv("GITHUB_REPO")
+        if branch == None:
+            branch = os.getenv("GITHUB_BRANCH")
+
         self.path_of_upload_folder=path_of_upload_folder
         self.token = token
         self.github_object = Github(self.token)
@@ -17,6 +26,8 @@ class git_file_server:
         self.repo = repo
         self.repository = self.github_object.get_repo(self.repo)
     
+    
+
     # Intend to push file to github_repo
     def push_file(self,filename):
         self.pushed_files.append(filename)
@@ -67,11 +78,11 @@ class git_file_server:
         return f"https://github.com/{self.repo}/blob/{self.branch}/{filename}?raw=true"
     
     # Intend to return absolute filelink
-    def pull_absolute_file_lin(self,filename):
+    def pull_absolute_file_link(self,filename):
         #https://raw.githubusercontent.com/gagaan-tech/v_nex_data/main/file_uploaded/Marshanicky.png
         filename=filename.replace(" ","%20")
         return f"https://raw.githubusercontent.com/{self.repo}/{self.branch}/{filename}"
-        
+    
     # Intend to return all file link
     def pull_all_file_link(self):
         file_name_array = self.pull_all_filename()
