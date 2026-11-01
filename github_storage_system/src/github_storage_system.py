@@ -1,141 +1,128 @@
-from github import Github
+"""Use a GitHub repository as simple file storage (e.g. for a Flask app)."""
+
 import os
 
-# Class to handle files between flask and github
+from github import Github, GithubException
+
+
 class git_file_server:
+    """Pushes, pulls and deletes files in a GitHub repository.
 
-    # Initialing with path_of_upload_folder as the path where the uploaded files will be
-    # Needs a environmental variable with GITHUB_TOKEN as the github api token and 
-    # GITHUB_REPO as the link to the github repository where the files will be stored
-    def __init__(self,path_of_upload_folder,token=None,repo=None,branch=None):
-        
-        # Intends to get authentication information through environmental variable
-        if token == None:
-            token = os.getenv("GITHUB_TOKEN")
-        if repo == None:
-            repo = os.getenv("GITHUB_REPO")
-        if branch == None:
-            branch = os.getenv("GITHUB_BRANCH")
+    Files are stored at the same relative path they have locally, so
+    ``push_file("uploads/a.png")`` creates ``uploads/a.png`` in the repo.
 
-        self.path_of_upload_folder=path_of_upload_folder
+    Credentials default to environment variables:
+        GITHUB_TOKEN   token with contents write access
+        GITHUB_REPO    "owner/name" of the storage repository
+        GITHUB_BRANCH  optional; defaults to the repository's default branch
+    """
+
+    def __init__(self, path_of_upload_folder, token=None, repo=None, branch=None):
+        token = token or os.getenv("GITHUB_TOKEN")
+        repo = repo or os.getenv("GITHUB_REPO")
+        if not token or not repo:
+            raise ValueError("Set GITHUB_TOKEN and GITHUB_REPO (or pass token= and repo=).")
+
+        self.path_of_upload_folder = path_of_upload_folder
         self.token = token
-        self.github_object = Github(self.token)
-        self.branch = branch # Branch of github repository
-        self.pushed_files=[] # Files pushed till now
-        self.files_in_github=[] # Files that are in github_repository
         self.repo = repo
-        self.repository = self.github_object.get_repo(self.repo)
-    
-    
+        self.github_object = Github(token)
+        self.repository = self.github_object.get_repo(repo)
+        # Passing branch=None to PyGithub fails and produced ".../None/..." links.
+        self.branch = branch or os.getenv("GITHUB_BRANCH") or self.repository.default_branch
+        self.pushed_files = []  # files pushed by this instance
+        self.files_in_github = []  # result of the last pull_all_filename()
 
-    # Intend to push file to github_repo
-    def push_file(self,filename):
-        self.pushed_files.append(filename)
-        f = open(filename,"rb")
-        content = f.read()
-        f.close()
-        self.repository.create_file(filename,f"Updated {filename}",content,branch=self.branch)
-        if os.path.exists(filename):
+    def push_file(self, filename, overwrite=False, keep_local=False):
+        """Uploads a local file to the same path in the repository.
+
+        Raises if the file already exists unless ``overwrite=True``. The local
+        copy is deleted afterwards unless ``keep_local=True``.
+        """
+        with open(filename, "rb") as f:
+            content = f.read()
+        path = self._repo_path(filename)
+        try:
+            self.repository.create_file(path, f"Add {path}", content, branch=self.branch)
+        except GithubException as error:
+            if not overwrite or error.status != 422:  # 422: file already exists
+                raise
+            existing = self.repository.get_contents(path, ref=self.branch)
+            self.repository.update_file(path, f"Update {path}", content, existing.sha, branch=self.branch)
+        self.pushed_files.append(path)
+        if not keep_local and os.path.exists(filename):
             os.remove(filename)
 
-    # Intended to push all files in upload_folder to github_repository
-    def push_all_files(self):
-        for filename in os.scandir(self.path_of_upload_folder):
-            if filename.is_file():
-                self.push_file(filename.path)
-                
-    # Intend to return an array of all files in image directory
+    def push_all_files(self, overwrite=False):
+        """Pushes every file in the upload folder."""
+        for entry in os.scandir(self.path_of_upload_folder):
+            if entry.is_file():
+                self.push_file(entry.path, overwrite=overwrite)
+
     def pull_all_filename(self):
-        self.files_in_github=[]
-        contents=self.repository.get_contents("",ref=self.branch)
+        """Returns the paths of all files in the repository."""
+        self.files_in_github = []
+        contents = self.repository.get_contents("", ref=self.branch)
         while contents:
-            file_content=contents.pop(0)
+            file_content = contents.pop(0)
             if file_content.type == "dir":
-                contents.extend(self.repository.get_contents(file_content.path))
+                contents.extend(self.repository.get_contents(file_content.path, ref=self.branch))
             else:
                 self.files_in_github.append(file_content.path)
         return self.files_in_github
-    
-    # Intend to get file content from github
-    def pull_file_content(self,filename):
-        contents = self.repository.get_contents(filename, ref=self.branch)
-        return contents.decoded_content
-    
-    # Intend to get file and save it in image directory
-    def pull_file(self,filename):
-        file_content=self.pull_file_content(filename)
-        f=open(filename,"wb")
-        f.write(file_content)
-    
-    # Intend to download all files in image directory
+
+    def pull_file_content(self, filename):
+        """Returns the file's bytes."""
+        return self.repository.get_contents(self._repo_path(filename), ref=self.branch).decoded_content
+
+    def pull_file(self, filename):
+        """Downloads a file to the same relative path locally."""
+        content = self.pull_file_content(filename)
+        directory = os.path.dirname(filename)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(filename, "wb") as f:
+            f.write(content)
+
     def pull_all_files(self):
-        for i in self.pull_all_filename():
-            self.pull_file(i)   
-    
-    # Intend to return file link of given filename
-    def pull_file_link(self,filename):
-        filename=filename.replace(" ","%20")
-        return f"https://github.com/{self.repo}/blob/{self.branch}/{filename}?raw=true"
-    
-    # Intend to return absolute filelink
-    def pull_absolute_file_link(self,filename):
-        #https://raw.githubusercontent.com/gagaan-tech/v_nex_data/main/file_uploaded/Marshanicky.png
-        filename=filename.replace(" ","%20")
-        return f"https://raw.githubusercontent.com/{self.repo}/{self.branch}/{filename}"
-    
-    # Intend to return all file link
+        for name in self.pull_all_filename():
+            self.pull_file(name)
+
+    def pull_file_link(self, filename):
+        """github.com link that serves the raw file."""
+        return f"https://github.com/{self.repo}/blob/{self.branch}/{self._url_path(filename)}?raw=true"
+
+    def pull_absolute_file_link(self, filename):
+        """raw.githubusercontent.com link to the file."""
+        return f"https://raw.githubusercontent.com/{self.repo}/{self.branch}/{self._url_path(filename)}"
+
     def pull_all_file_link(self):
-        file_name_array = self.pull_all_filename()
-        file_link_array = []
-        for i in file_name_array:
-            file_link_array.append(self.pull_file_link(i))
-            file_name_array.remove(i)
-        return file_link_array
-    
-    # Intend to delete a file in github repository
-    def delete_file(self,filename):
-        contents = self.repository.get_contents(filename, ref=self.branch)
-        self.repository.delete_file(contents.path, f"{contents.path} Deleted", contents.sha)
-    
-    # Intend to delete all files in github repo
+        # The old version removed items from the list while iterating over
+        # it, which skipped every other file.
+        return [self.pull_file_link(name) for name in self.pull_all_filename()]
+
+    def delete_file(self, filename):
+        path = self._repo_path(filename)
+        contents = self.repository.get_contents(path, ref=self.branch)
+        self.repository.delete_file(contents.path, f"Delete {contents.path}", contents.sha, branch=self.branch)
+
     def delete_all_files(self):
-        filename_array = self.pull_all_filename()
-        for i in filename_array:
-            self.delete_file(i)
-    
-    def push_file_get_link(self,filename):
-        self.push_file(filename)
+        for name in self.pull_all_filename():
+            self.delete_file(name)
+
+    def push_file_get_link(self, filename, overwrite=False):
+        self.push_file(filename, overwrite=overwrite)
         return self.pull_file_link(filename)
 
+    @staticmethod
+    def _repo_path(filename):
+        path = str(filename).replace(os.sep, "/")
+        while path.startswith("./"):
+            path = path[2:]
+        return path.lstrip("/")
 
-# class github_store:
-#     def __init__(self,file_path=None):
-#         if file_path == None:
-#             self.file_path = "chat_log.txt"
-#         self.token = os.getenv("GITHUB_TOKEN")
-#         self.github_object = Github(self.token)
-#         self.branch = "main"
-#         self.repository = self.github_object.get_repo("marsha-nicky/my_knowledge")
-    
-#     def pull_data(self):
-#         contents = self.repository.get_contents(self.file_path, ref=self.branch)
-#         return contents.decoded_content.decode()
+    @classmethod
+    def _url_path(cls, filename):
+        from urllib.parse import quote
 
-#     def push(self,path=None, message=None, content=None, branch=None, update=False):
-
-#         if path == None:
-#             path = self.file_path
-#         if message == None:
-#             message = "Added chat knowledge"
-#         if content == None:
-#             content = self.data
-#         if branch == None:
-#             branch = self.branch
-
-#         source = self.repository.get_branch(branch)
-#         if update:  # If file already exists, update it
-#             contents = self.repository.get_contents(path, ref=branch)  # Retrieve old file to get its SHA and path
-#             self.repository.update_file(contents.path, message, content, contents.sha, branch=branch)  # Add, commit and push branch
-#             print("github_storage : updated content")
-#         else:  # If file doesn't exist, create it
-#             self.repository.create_file(path, message, content, branch=branch)  # Add, commit and push branch
+        return quote(cls._repo_path(filename))
